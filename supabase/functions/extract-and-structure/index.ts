@@ -3,22 +3,24 @@
 //
 // Flow:
 //   1. Load the document row + file bytes from Storage.
-//   2. Build a chat message: plain text for text-based files (txt/csv/md/json), an image_url
-//      content block (base64 data URI) for scans — Qwen2.5-VL reads the image directly, no
-//      separate OCR step.
-//   3. Call Qwen2.5-VL via the Hugging Face router's OpenAI-compatible chat completions endpoint,
-//      with `response_format: { type: "json_schema", ... }` to constrain the output to our exact
-//      fields schema. Enforcement is provider-dependent (unlike Anthropic's tool_choice, which
-//      guarantees the shape), so the response is still defensively JSON-parsed and validated.
-//   4. Write `fields` rows, set `documents.raw_text` + `doc_type`, embed raw_text, write
-//      `documents.embedding`, set status = 'ready_for_review'.
+//   2. Build a Mistral OCR request:
+//      - PDF/DOCX/PPTX/images -> `document_url` (base64 data URI), OCR'd directly by Mistral.
+//      - Plain text files (txt/csv/md/json) -> no OCR needed, skip straight to structuring using
+//        the file's own text via `document_annotation_prompt` context (Mistral OCR is a
+//        document/image API, not a generic text endpoint — see below).
+//   3. Call Mistral's OCR endpoint (`POST /v1/ocr`) with `document_annotation_format` set to our
+//      exact fields JSON schema, so the model both OCRs the document AND returns structured
+//      fields in a single request (see docs.mistral.ai/api/endpoint/ocr). The response is still
+//      defensively JSON-parsed and validated, since schema enforcement is provider-dependent.
+//   4. Write `fields` rows, set `documents.raw_text` (from OCR markdown) + `doc_type`, embed
+//      raw_text, write `documents.embedding`, set status = 'ready_for_review'.
 //   5. On any failure: status = 'failed' with error_message set, so the frontend can show a retry.
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { getAdminClient } from "../_shared/supabase-admin.ts";
 import { embedText } from "../_shared/embeddings.ts";
 
-const HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions";
-const QWEN_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct:fastest";
+const MISTRAL_OCR_URL = "https://api.mistral.ai/v1/ocr";
+const MISTRAL_OCR_MODEL = "mistral-ocr-latest";
 
 // JSON Schema for the fields payload — mirrors the shape the frontend/DB expect exactly
 // (see supabase/functions/extract-and-structure and src/types/api.ts on the frontend side).
@@ -52,6 +54,10 @@ const FIELDS_JSON_SCHEMA = {
   additionalProperties: false,
 };
 
+const DOCUMENT_ANNOTATION_PROMPT =
+  "Extract structured fields from this document and classify its doc_type. Return only JSON " +
+  "matching the given schema — no markdown, no commentary.";
+
 interface ExtractedField {
   label: string;
   value: string;
@@ -64,8 +70,14 @@ interface RecordFieldsInput {
   fields: ExtractedField[];
 }
 
+// Mistral OCR document/image types it accepts via a data URI, per file extension.
+// PDF/DOCX/PPTX/images all go through the same `document_url` chunk type — Mistral OCR reads the
+// mime type from the data URI itself, so this map only needs to cover what our uploader allows.
 const TEXT_EXTENSIONS = new Set(["txt", "md", "csv", "json"]);
-const IMAGE_MIME_BY_EXT: Record<string, string> = {
+const DOCUMENT_MIME_BY_EXT: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -94,27 +106,104 @@ function isRecordFieldsInput(value: unknown): value is RecordFieldsInput {
   );
 }
 
-async function callQwen(content: unknown[]): Promise<RecordFieldsInput> {
-  const apiKey = Deno.env.get("HF_TOKEN");
-  if (!apiKey) {
-    throw new Error("Missing HF_TOKEN env var in Edge Function runtime.");
+function parseAnnotation(rawAnnotation: string): RecordFieldsInput {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawAnnotation);
+  } catch {
+    throw new Error(
+      `Mistral OCR document_annotation was not valid JSON (schema enforcement is provider-dependent): ${rawAnnotation.slice(0, 200)}`,
+    );
   }
 
-  const res = await fetch(HF_ROUTER_URL, {
+  if (!isRecordFieldsInput(parsed)) {
+    throw new Error("Mistral OCR document_annotation did not match the expected fields schema.");
+  }
+
+  return parsed;
+}
+
+function requireApiKey(): string {
+  const apiKey = Deno.env.get("MISTRAL_API_KEY");
+  if (!apiKey) {
+    throw new Error("Missing MISTRAL_API_KEY env var in Edge Function runtime.");
+  }
+  return apiKey;
+}
+
+// OCRs a document (PDF/DOCX/PPTX/image) and structures it into our fields schema in one call,
+// via Mistral's `document_annotation_format` — no separate OCR + LLM structuring step needed.
+async function callMistralOcr(
+  documentUrl: string,
+): Promise<{ extracted: RecordFieldsInput; rawText: string }> {
+  const apiKey = requireApiKey();
+
+  const res = await fetch(MISTRAL_OCR_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: QWEN_MODEL,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Extract structured fields from the document provided. Return only JSON matching the given schema — no markdown, no commentary.",
+      model: MISTRAL_OCR_MODEL,
+      document: {
+        type: "document_url",
+        document_url: documentUrl,
+      },
+      document_annotation_prompt: DOCUMENT_ANNOTATION_PROMPT,
+      document_annotation_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "record_extracted_fields",
+          schema: FIELDS_JSON_SCHEMA,
+          strict: true,
         },
-        { role: "user", content },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Mistral OCR API error (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  const rawAnnotation = data?.document_annotation;
+  if (typeof rawAnnotation !== "string") {
+    throw new Error("Mistral OCR response did not include a document_annotation.");
+  }
+
+  const rawText = Array.isArray(data?.pages)
+    ? data.pages.map((p: { markdown?: string }) => p.markdown ?? "").join("\n\n")
+    : "";
+
+  return { extracted: parseAnnotation(rawAnnotation), rawText };
+}
+
+// Plain text files (txt/md/csv/json) aren't documents/images, so they don't go through the OCR
+// endpoint — Mistral OCR only accepts document_url/image_url chunks. Instead, we reuse the same
+// document_annotation_format contract via a chat completion against Mistral's text model, keeping
+// one provider (and one API key) for the whole function.
+const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
+const MISTRAL_TEXT_MODEL = "mistral-small-latest";
+
+async function callMistralChat(name: string, rawText: string): Promise<RecordFieldsInput> {
+  const apiKey = requireApiKey();
+
+  const res = await fetch(MISTRAL_CHAT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MISTRAL_TEXT_MODEL,
+      messages: [
+        { role: "system", content: DOCUMENT_ANNOTATION_PROMPT },
+        {
+          role: "user",
+          content: `Document name: ${name}\n\n${rawText}`,
+        },
       ],
       response_format: {
         type: "json_schema",
@@ -129,29 +218,16 @@ async function callQwen(content: unknown[]): Promise<RecordFieldsInput> {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Qwen (Hugging Face) API error (${res.status}): ${errText}`);
+    throw new Error(`Mistral chat API error (${res.status}): ${errText}`);
   }
 
   const data = await res.json();
   const rawContent = data?.choices?.[0]?.message?.content;
   if (typeof rawContent !== "string") {
-    throw new Error("Qwen response did not include message content.");
+    throw new Error("Mistral chat response did not include message content.");
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawContent);
-  } catch {
-    throw new Error(
-      `Qwen response was not valid JSON (schema enforcement is provider-dependent): ${rawContent.slice(0, 200)}`,
-    );
-  }
-
-  if (!isRecordFieldsInput(parsed)) {
-    throw new Error("Qwen response did not match the expected fields schema.");
-  }
-
-  return parsed;
+  return parseAnnotation(rawContent);
 }
 
 Deno.serve(async (req: Request) => {
@@ -201,49 +277,29 @@ Deno.serve(async (req: Request) => {
     }
 
     const ext = getExtension(doc.name);
-    let content: unknown[];
-    let rawText = "";
-
-    if (TEXT_EXTENSIONS.has(ext)) {
-      rawText = await fileBlob.text();
-      content = [
-        {
-          type: "text",
-          text:
-            `Extract structured fields from this document. Document name: ${doc.name}\n\n${rawText}`,
-        },
-      ];
-    } else if (ext in IMAGE_MIME_BY_EXT) {
-      const buffer = await fileBlob.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-      const mimeType = IMAGE_MIME_BY_EXT[ext];
-      content = [
-        {
-          type: "text",
-          text: `Extract structured fields from this document (${doc.name}).`,
-        },
-        {
-          type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${base64}` },
-        },
-      ];
-    } else if (ext === "pdf") {
-      // PDF text-lib extraction (pdf-parse equivalent) is a Day 2 addition per the plan;
-      // for now route PDFs through the vision path as page images is out of scope for a
-      // single-request flow, so treat as unsupported until a text-extraction step is added.
-      throw new Error(
-        `PDF extraction requires a text-extraction step not yet implemented. Upload txt/image files for now.`,
-      );
-    } else {
-      throw new Error(`Unsupported file type: .${ext}`);
-    }
 
     await supabase
       .from("documents")
       .update({ status: "structuring" })
       .eq("id", documentId);
 
-    const extracted = await callQwen(content);
+    let extracted: RecordFieldsInput;
+    let rawText = "";
+
+    if (TEXT_EXTENSIONS.has(ext)) {
+      rawText = await fileBlob.text();
+      extracted = await callMistralChat(doc.name, rawText);
+    } else if (ext in DOCUMENT_MIME_BY_EXT) {
+      const buffer = await fileBlob.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const mimeType = DOCUMENT_MIME_BY_EXT[ext];
+      const documentUrl = `data:${mimeType};base64,${base64}`;
+      const result = await callMistralOcr(documentUrl);
+      extracted = result.extracted;
+      rawText = result.rawText;
+    } else {
+      throw new Error(`Unsupported file type: .${ext}`);
+    }
 
     if (extracted.fields.length > 0) {
       const fieldRows = extracted.fields.map((f) => ({
@@ -260,8 +316,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // raw_text may already be set for text files; for images, fall back to a text summary of
-    // extracted fields so there's still something to embed for semantic search.
+    // raw_text is the OCR markdown (documents) or the file's own text (plain text files); for
+    // images/PDFs with no extractable text, fall back to a text summary of the extracted fields
+    // so there's still something to embed for semantic search.
     const textForEmbedding = rawText ||
       extracted.fields.map((f) => `${f.label}: ${f.value}`).join("\n");
 

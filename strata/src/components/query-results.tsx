@@ -19,7 +19,7 @@ interface QueryResultsProps {
 
 // Table for structured filter results (columns = field labels) — JSON for semantic search
 // results, since similarity matches don't map cleanly to a fixed set of columns. Mode is always
-// shown so the user can see which path Claude's classification took, as a trust/debug signal.
+// shown so the user can see which path the query classification took, as a trust/debug signal.
 export function QueryResults({ response }: QueryResultsProps) {
   const [view, setView] = useState<"table" | "json">("table");
 

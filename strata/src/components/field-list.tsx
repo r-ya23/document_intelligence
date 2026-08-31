@@ -4,8 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ConfidenceBadge } from "@/components/confidence-badge";
-import { CheckIcon, PencilIcon, XIcon, CircleCheckIcon } from "lucide-react";
-import { useUpdateField, useVerifyField } from "@/hooks/use-update-field";
+import { CheckIcon, PencilIcon, XIcon, CircleCheckIcon, CheckCheckIcon } from "lucide-react";
+import { useUpdateField, useVerifyField, useVerifyAllFields } from "@/hooks/use-update-field";
 import type { FieldRow } from "@/types/db";
 
 interface FieldListProps {
@@ -30,6 +30,9 @@ export function FieldList({ documentId, fields, onHoverField }: FieldListProps) 
 
   const { mutate: updateField, isPending: isSaving } = useUpdateField(documentId);
   const { mutate: verifyField, isPending: isVerifying } = useVerifyField(documentId);
+  const { mutate: verifyAllFields, isPending: isVerifyingAll } = useVerifyAllFields(documentId);
+
+  const unverifiedCount = fields.filter((f) => !f.verified).length;
 
   if (fields.length === 0) {
     return (
@@ -73,8 +76,29 @@ export function FieldList({ documentId, fields, onHoverField }: FieldListProps) 
     );
   }
 
+  function handleVerifyAll() {
+    verifyAllFields(undefined, {
+      onSuccess: () => toast.success("All fields marked verified"),
+      onError: (error) =>
+        toast.error("Failed to verify all fields", { description: error.message }),
+    });
+  }
+
   return (
     <div className="space-y-2">
+      {unverifiedCount > 0 && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleVerifyAll}
+            disabled={isVerifyingAll}
+          >
+            <CheckCheckIcon className="size-4" />
+            {isVerifyingAll ? "Marking all verified…" : `Mark all verified (${unverifiedCount})`}
+          </Button>
+        </div>
+      )}
       {sorted.map((field) => {
         const isEditing = editingFieldId === field.id;
         return (

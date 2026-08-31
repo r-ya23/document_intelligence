@@ -3,7 +3,7 @@
 This project has two separate env surfaces — keep them separate, never cross-populate:
 
 1. **Frontend** (`strata/.env.local`) — only ever the Supabase **anon** key. Safe to ship to the browser.
-2. **Edge Functions** (Supabase secrets store) — Anthropic + embedding provider keys, and the
+2. **Edge Functions** (Supabase secrets store) — Mistral + embedding provider keys, and the
    Supabase **service_role** key. Never referenced from frontend code.
 
 ---
@@ -30,8 +30,8 @@ Edge Functions run in a separate runtime and read secrets via `Deno.env.get(...)
 ### Local development
 Create `supabase/functions/.env` (gitignored) from `supabase/functions/.env.example`:
 ```bash
-HF_TOKEN=hf_...            # Hugging Face token — used by extract-and-structure (Qwen2.5-VL)
-ANTHROPIC_API_KEY=sk-ant-...   # used by query-router's classify step only
+MISTRAL_API_KEY=...        # Mistral AI key — used by extract-and-structure (OCR + structuring)
+                            # and by query-router (classify step)
 EMBEDDING_API_KEY=...       # Voyage AI key (voyageai.com) — or swap embeddings.ts for OpenAI
 ```
 The local CLI (`supabase functions serve`) loads this file automatically.
@@ -42,8 +42,7 @@ Secrets must be set once via the CLI before deploying — they are stored server
 ```bash
 supabase link --project-ref <your-project-ref>
 
-supabase secrets set HF_TOKEN=hf_...
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+supabase secrets set MISTRAL_API_KEY=...
 supabase secrets set EMBEDDING_API_KEY=...
 
 supabase functions deploy extract-and-structure
@@ -60,8 +59,7 @@ supabase functions deploy query-router
 | `VITE_SUPABASE_URL` | Supabase dashboard → Settings → API, or local `supabase status` | Frontend |
 | `VITE_SUPABASE_ANON_KEY` | Supabase dashboard → Settings → API, or local `supabase status` | Frontend |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → Settings → API (auto-injected for Edge Functions) | Edge Functions only |
-| `HF_TOKEN` | huggingface.co/settings/tokens | `extract-and-structure` (Qwen2.5-VL) |
-| `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys | `query-router` (classify step) |
+| `MISTRAL_API_KEY` | console.mistral.ai/api-keys | `extract-and-structure` (OCR + structuring), `query-router` (classify step) |
 | `EMBEDDING_API_KEY` | voyageai.com (or OpenAI platform if you swap providers) | Both Edge Functions |
 | `SUPABASE_ACCESS_TOKEN` | Supabase account → Access Tokens (CLI login: `supabase login`) | CLI only, not runtime |
 | `SUPABASE_PROJECT_REF` | Project URL or Settings → General | CLI `link`/`deploy` only |

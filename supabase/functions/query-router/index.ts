@@ -2,16 +2,17 @@
 // Body: { query: string }
 //
 // Flow:
-//   1. Classify the natural-language query via Claude tool-use: 'filter' (structured, translates to
-//      a Postgres query over `fields`) or 'semantic' (translates to a pgvector similarity search).
+//   1. Classify the natural-language query via Mistral chat completions (JSON schema mode):
+//      'filter' (structured, translates to a Postgres query over `fields`) or 'semantic'
+//      (translates to a pgvector similarity search).
 //   2a. filter mode: build a Postgres query over `fields` (label/value/op) and return matching rows.
 //   2b. semantic mode: embed the query text, call `match_documents` RPC, return document matches.
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { getAdminClient } from "../_shared/supabase-admin.ts";
 import { embedText } from "../_shared/embeddings.ts";
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
+const MISTRAL_MODEL = "mistral-small-latest";
 
 interface QueryFilter {
   field: string;
@@ -24,33 +25,40 @@ interface RouteQueryInput {
   filters?: QueryFilter[];
 }
 
-const ROUTE_QUERY_TOOL = {
-  name: "route_query",
-  description:
-    "Decide whether this natural-language question needs a structured field filter or a semantic search over document content.",
-  input_schema: {
-    type: "object",
-    properties: {
-      mode: { type: "string", enum: ["filter", "semantic"] },
-      filters: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            field: { type: "string", description: "the field label to filter on, e.g. total_due" },
-            op: {
-              type: "string",
-              enum: ["eq", "neq", "gt", "gte", "lt", "lte", "contains"],
-            },
-            value: { type: "string" },
+// JSON Schema for the routing decision — mirrors the shape the previous Claude tool_use call
+// produced, so downstream code (runFilterQuery, response shape) needs no changes.
+const ROUTE_QUERY_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    mode: { type: "string", enum: ["filter", "semantic"] },
+    filters: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string", description: "the field label to filter on, e.g. total_due" },
+          op: {
+            type: "string",
+            enum: ["eq", "neq", "gt", "gte", "lt", "lte", "contains"],
           },
-          required: ["field", "op", "value"],
+          value: { type: "string" },
         },
+        required: ["field", "op", "value"],
+        additionalProperties: false,
       },
     },
-    required: ["mode"],
   },
+  required: ["mode", "filters"],
+  additionalProperties: false,
 };
+
+const ROUTE_QUERY_SYSTEM_PROMPT =
+  "Decide whether this natural-language question needs a structured field filter or a semantic " +
+  "search over document content. Use mode 'filter' when the question names a specific field and " +
+  "a comparison (e.g. 'invoices over $500', 'contracts dated after 2024'), extracting each as " +
+  "{field, op, value}. Use mode 'semantic' for conceptual/fuzzy questions with no clear field " +
+  "comparison, and return an empty filters array. Return only JSON matching the given schema — " +
+  "no markdown, no commentary.";
 
 const OP_TO_POSTGREST: Record<QueryFilter["op"], string> = {
   eq: "eq",
@@ -62,41 +70,78 @@ const OP_TO_POSTGREST: Record<QueryFilter["op"], string> = {
   contains: "ilike",
 };
 
+function isRouteQueryInput(value: unknown): value is RouteQueryInput {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v.mode !== "filter" && v.mode !== "semantic") return false;
+  if (v.filters === undefined) return true;
+  return (
+    Array.isArray(v.filters) &&
+    v.filters.every(
+      (f) =>
+        typeof f === "object" &&
+        f !== null &&
+        typeof (f as Record<string, unknown>).field === "string" &&
+        typeof (f as Record<string, unknown>).op === "string" &&
+        typeof (f as Record<string, unknown>).value === "string",
+    )
+  );
+}
+
 async function classifyQuery(query: string): Promise<RouteQueryInput> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const apiKey = Deno.env.get("MISTRAL_API_KEY");
   if (!apiKey) {
-    throw new Error("Missing ANTHROPIC_API_KEY env var in Edge Function runtime.");
+    throw new Error("Missing MISTRAL_API_KEY env var in Edge Function runtime.");
   }
 
-  const res = await fetch(ANTHROPIC_API_URL, {
+  const res = await fetch(MISTRAL_CHAT_URL, {
     method: "POST",
     headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: ANTHROPIC_MODEL,
-      max_tokens: 512,
-      tools: [ROUTE_QUERY_TOOL],
-      tool_choice: { type: "tool", name: "route_query" },
-      messages: [{ role: "user", content: query }],
+      model: MISTRAL_MODEL,
+      messages: [
+        { role: "system", content: ROUTE_QUERY_SYSTEM_PROMPT },
+        { role: "user", content: query },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "route_query",
+          schema: ROUTE_QUERY_JSON_SCHEMA,
+          strict: true,
+        },
+      },
     }),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Claude API error (${res.status}): ${errText}`);
+    throw new Error(`Mistral chat API error (${res.status}): ${errText}`);
   }
 
   const data = await res.json();
-  const toolUse = data?.content?.find(
-    (block: { type: string }) => block.type === "tool_use",
-  );
-  if (!toolUse) {
-    throw new Error("Claude response did not include a tool_use block.");
+  const rawContent = data?.choices?.[0]?.message?.content;
+  if (typeof rawContent !== "string") {
+    throw new Error("Mistral response did not include message content.");
   }
-  return toolUse.input as RouteQueryInput;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch {
+    throw new Error(
+      `Mistral response was not valid JSON (schema enforcement is provider-dependent): ${rawContent.slice(0, 200)}`,
+    );
+  }
+
+  if (!isRouteQueryInput(parsed)) {
+    throw new Error("Mistral response did not match the expected route_query schema.");
+  }
+
+  return parsed;
 }
 
 // deno-lint-ignore no-explicit-any

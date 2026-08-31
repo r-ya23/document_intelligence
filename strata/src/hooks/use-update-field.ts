@@ -74,3 +74,25 @@ export function useVerifyField(documentId: string) {
     },
   });
 }
+
+// Marks every not-yet-verified field for a document verified in one update — for "everything
+// here looks right" rather than clicking "Mark verified" per field. Only touches unverified rows
+// (verified ones are left alone, no-op update avoided) via `.eq("verified", false)`.
+export function useVerifyAllFields(documentId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("fields")
+        .update({ verified: true })
+        .eq("document_id", documentId)
+        .eq("verified", false);
+      if (error) throw new Error(`Failed to verify all fields: ${error.message}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: fieldsQueryKey(documentId) });
+      queryClient.invalidateQueries({ queryKey: documentQueryKey(documentId) });
+    },
+  });
+}

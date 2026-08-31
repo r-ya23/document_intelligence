@@ -5,7 +5,7 @@ import { DOCUMENTS_QUERY_KEY } from "./use-documents";
 // Files supported by extract-and-structure today (see supabase/functions/extract-and-structure).
 // PDF is intentionally excluded — the edge function rejects it until a text-extraction step is
 // added (see decisions.md).
-export const ACCEPTED_FILE_EXTENSIONS = ["txt", "md", "csv", "json", "png", "jpg", "jpeg", "webp", "gif"];
+export const ACCEPTED_FILE_EXTENSIONS = ["txt", "md", "csv", "json", "png", "jpg", "jpeg", "webp", "gif", "pdf"];
 
 export function isAcceptedFile(fileName: string): boolean {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";

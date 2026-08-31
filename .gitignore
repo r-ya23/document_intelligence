@@ -1,0 +1,18 @@
+# Env files — never commit real secrets
+.env
+.env.local
+.env.example
+.env.*.local
+supabase/functions/.env
+
+.env
+*.env
+supabase/functions/.env
+
+# Supabase local dev artifacts
+supabase/.branches
+supabase/.temp
+
+# OS / editor
+.DS_Store
+node_modules/

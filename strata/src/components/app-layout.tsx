@@ -2,12 +2,20 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
-  { to: "/", label: "Documents" },
+  { to: "/", label: "Containers" },
+  { to: "/documents", label: "Documents" },
   { to: "/query", label: "Query" },
 ];
 
 export function AppLayout() {
   const location = useLocation();
+
+  function isActive(to: string) {
+    if (to === "/") {
+      return location.pathname === "/" || location.pathname.startsWith("/containers");
+    }
+    return location.pathname === to || location.pathname.startsWith(`${to}/`);
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -21,7 +29,7 @@ export function AppLayout() {
                 to={link.to}
                 className={cn(
                   "text-sm text-muted-foreground transition-colors hover:text-foreground",
-                  location.pathname === link.to && "text-foreground font-medium",
+                  isActive(link.to) && "text-foreground font-medium",
                 )}
               >
                 {link.label}

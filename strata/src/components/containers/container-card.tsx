@@ -1,11 +1,8 @@
 import { Link } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import { FileTextIcon, ScrollTextIcon, UserRoundIcon, FilesIcon } from "lucide-react";
 import type { Container } from "@/features/containers/types";
 import type { DocType } from "@/types/db";
 
-// Styles live alongside the component (Tailwind utility classes, matching the rest of the
-// codebase) rather than a separate stylesheet — see other components under src/components.
 const DOC_TYPE_ICON: Record<DocType, typeof FileTextIcon> = {
   invoice: FileTextIcon,
   contract: ScrollTextIcon,
@@ -23,24 +20,57 @@ export function ContainerCard({ container, docCount, extractionCount }: Containe
   const Icon = DOC_TYPE_ICON[container.docType];
 
   return (
-    <Link to={`/containers/${container.id}`}>
-      <Card className="h-full gap-3 py-5 transition-colors hover:border-primary/40">
-        <CardContent className="flex h-full flex-col gap-3 px-5">
-          <Icon className="size-5 text-primary" />
-          <div>
-            <h3 className="text-base font-semibold">{container.name}</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground capitalize">
-              {container.docType} · default {container.defaultMode} verify
-            </p>
-          </div>
-          <div className="mt-auto flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-            <span>{docCount} documents</span>
-            <span>
-              {extractionCount} extraction{extractionCount !== 1 ? "s" : ""}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+    <Link to={`/containers/${container.id}`} className="group block h-full">
+      <div
+        className="flex h-full flex-col gap-4 rounded-xl bg-white p-5 transition-all"
+        style={{ border: "1px solid #E5E2DA" }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.border = "1px solid #CCFF01";
+          (e.currentTarget as HTMLDivElement).style.background = "#FDFFF5";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.border = "1px solid #E5E2DA";
+          (e.currentTarget as HTMLDivElement).style.background = "#FFFFFF";
+        }}
+      >
+        {/* Icon pill + verify mode */}
+        <div className="flex items-center justify-between">
+          <span
+            className="flex size-8 items-center justify-center rounded-lg"
+            style={{ background: "#F0FFB0" }}
+          >
+            <Icon className="size-4" style={{ color: "#5A7A00" }} />
+          </span>
+          <span
+            className="rounded-md px-2 py-0.5 text-[11px] font-medium"
+            style={
+              container.defaultMode === "auto"
+                ? { background: "#F0FFB0", color: "#5A7A00", border: "1px solid #CCFF01" }
+                : { background: "#F5F3EE", color: "#6B6B6B", border: "1px solid #E5E2DA" }
+            }
+          >
+            {container.defaultMode} verify
+          </span>
+        </div>
+
+        {/* Name + type */}
+        <div className="flex-1">
+          <h3 className="text-[15px] font-semibold" style={{ color: "#1A1A1A" }}>
+            {container.name}
+          </h3>
+          <p className="mt-0.5 text-xs capitalize" style={{ color: "#6B6B6B" }}>
+            {container.docType} · {docCount} docs
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div
+          className="border-t pt-3 text-xs"
+          style={{ borderColor: "#E5E2DA", color: "#6B6B6B" }}
+        >
+          {extractionCount} extraction{extractionCount !== 1 ? "s" : ""}
+        </div>
+      </div>
     </Link>
   );
 }

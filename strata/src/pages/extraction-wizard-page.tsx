@@ -72,7 +72,7 @@ export function ExtractionWizardPage() {
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Container not found.</p>
         <Button variant="outline" asChild>
-          <Link to="/">Back to containers</Link>
+          <Link to="/dashboard">Back to containers</Link>
         </Button>
       </div>
     );

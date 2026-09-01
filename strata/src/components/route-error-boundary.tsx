@@ -23,7 +23,7 @@ export function RouteErrorBoundary() {
         <p className="mt-1 text-sm text-muted-foreground">{message}</p>
       </div>
       <Button asChild>
-        <Link to="/">Back to documents</Link>
+        <Link to="/dashboard">Back to dashboard</Link>
       </Button>
     </div>
   );

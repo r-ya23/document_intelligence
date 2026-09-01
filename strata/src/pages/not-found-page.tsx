@@ -11,7 +11,7 @@ export function NotFoundPage() {
         </p>
       </div>
       <Button asChild>
-        <Link to="/">Back to documents</Link>
+        <Link to="/dashboard">Back to dashboard</Link>
       </Button>
     </div>
   );

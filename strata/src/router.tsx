@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router-dom";
 import { AppLayout } from "@/components/app-layout";
+import { WelcomePage } from "@/pages/welcome-page";
 import { ContainerDashboardPage } from "@/pages/container-dashboard-page";
 import { ContainerDetailPage } from "@/pages/container-detail-page";
 import { ExtractionWizardPage } from "@/pages/extraction-wizard-page";
@@ -12,13 +13,15 @@ import { NotFoundPage } from "@/pages/not-found-page";
 export const router = createBrowserRouter([
   {
     path: "/",
+    element: <WelcomePage />,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/",
     element: <AppLayout />,
-    // Layout-level fallback: catches errors thrown during AppLayout's own render (rare). Errors
-    // inside child routes are caught by each child's own errorElement below instead, so the nav
-    // in AppLayout stays visible rather than being replaced along with the crashed page.
     errorElement: <RouteErrorBoundary />,
     children: [
-      { index: true, element: <ContainerDashboardPage />, errorElement: <RouteErrorBoundary /> },
+      { path: "dashboard", element: <ContainerDashboardPage />, errorElement: <RouteErrorBoundary /> },
       {
         path: "containers/:containerId",
         element: <ContainerDetailPage />,

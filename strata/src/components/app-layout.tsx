@@ -47,13 +47,14 @@ export function AppLayout() {
 
   return (
     <div
-      className="flex min-h-screen transition-colors duration-200"
+      className="flex h-screen overflow-hidden transition-colors duration-200"
       style={{ background: dark ? "#0F1117" : "#F8F7F2" }}
     >
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      {/* h-screen + overflow-hidden on the root pins the sidebar; it never scrolls with content. */}
       <aside
         className={cn(
-          "flex shrink-0 flex-col border-r transition-all duration-300 ease-in-out select-none",
+          "flex h-screen shrink-0 flex-col border-r transition-all duration-300 ease-in-out select-none",
           collapsed ? "w-[64px]" : "w-[240px]"
         )}
         style={{

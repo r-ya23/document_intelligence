@@ -14,7 +14,11 @@ export interface Container {
   createdAt: string;
 }
 
-export type ExtractionStatus = "published";
+// An extraction's status mirrors the underlying document's real status (see use-containers.ts,
+// docToExtraction). "published" is a UI label for a document that finished successfully
+// (ready_for_review / verified); "failed" surfaces a failed extraction in the log rather than
+// pretending it published.
+export type ExtractionStatus = "published" | "failed" | "processing";
 
 export interface Extraction {
   id: string;
@@ -27,10 +31,21 @@ export interface Extraction {
   documentIds: string[];
 }
 
+import type { FieldType } from "@/types/db";
+
+// One field in a container's schema, as authored in the create dialog. Mirrors container_fields.
+export interface ContainerFieldInput {
+  label: string;
+  fieldType: FieldType;
+  required: boolean;
+  description?: string | null;
+}
+
 export interface NewContainerInput {
   name: string;
   docType: DocType;
   defaultMode: VerifyMode;
+  fields: ContainerFieldInput[];
 }
 
 export interface NewExtractionInput {

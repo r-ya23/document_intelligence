@@ -145,7 +145,7 @@ async function classifyQuery(query: string): Promise<RouteQueryInput> {
 }
 
 // deno-lint-ignore no-explicit-any
-async function runFilterQuery(supabase: any, filters: QueryFilter[]) {
+async function runFilterQuery(supabase: any, filters: QueryFilter[], containerId: string | null) {
   // Each filter narrows to fields matching label + value predicate, then we roll up matching
   // field rows into their parent documents. Multiple filters are applied as an AND by running one
   // query per filter and intersecting document_ids — simplest correct approach for a small filter
@@ -175,18 +175,27 @@ async function runFilterQuery(supabase: any, filters: QueryFilter[]) {
   const ids = matchingDocIds ? [...matchingDocIds] : [];
   if (ids.length === 0) return [];
 
-  const { data: documents, error: docsError } = await supabase
+  let docsQuery = supabase
     .from("documents")
-    .select("id, name, doc_type, status, created_at")
+    .select("id, name, doc_type, status, created_at, container_id")
     .in("id", ids);
 
+  // Scope to a single container when requested; omit for global search.
+  if (containerId) docsQuery = docsQuery.eq("container_id", containerId);
+
+  const { data: documents, error: docsError } = await docsQuery;
+
   if (docsError) throw new Error(`Failed to load matching documents: ${docsError.message}`);
+
+  // container scoping may have dropped some ids; fetch fields only for the documents we kept
+  const keptIds = (documents ?? []).map((d: { id: string }) => d.id);
+  if (keptIds.length === 0) return [];
 
   // attach the matching fields per document for context in the results view
   const { data: allFields } = await supabase
     .from("fields")
     .select("document_id, label, value, confidence")
-    .in("document_id", ids);
+    .in("document_id", keptIds);
 
   return (documents ?? []).map((doc: { id: string }) => ({
     ...doc,
@@ -203,9 +212,14 @@ Deno.serve(async (req: Request) => {
   }
 
   let query: string | undefined;
+  let containerId: string | null = null;
   try {
     const body = await req.json();
     query = body?.query;
+    // optional: scope both search modes to a single container. omit/null = global search.
+    if (typeof body?.container_id === "string" && body.container_id.length > 0) {
+      containerId = body.container_id;
+    }
   } catch {
     return jsonResponse({ error: "Invalid JSON body" }, 400);
   }
@@ -220,16 +234,17 @@ Deno.serve(async (req: Request) => {
     const routed = await classifyQuery(query);
 
     if (routed.mode === "filter") {
-      const results = await runFilterQuery(supabase, routed.filters ?? []);
+      const results = await runFilterQuery(supabase, routed.filters ?? [], containerId);
       return jsonResponse({ mode: "filter", filters: routed.filters ?? [], results });
     }
 
-    // semantic mode
+    // semantic mode — filter_container_id null = global search across all documents
     const embedding = await embedText(query);
     const { data, error } = await supabase.rpc("match_documents", {
       query_embedding: embedding,
       match_threshold: 0.5,
       match_count: 10,
+      filter_container_id: containerId,
     });
 
     if (error) throw new Error(`Semantic search failed: ${error.message}`);

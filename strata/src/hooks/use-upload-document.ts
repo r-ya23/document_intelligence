@@ -14,9 +14,11 @@ export function isAcceptedFile(fileName: string): boolean {
 
 interface UploadDocumentInput {
   file: File;
+  // when set, the document is linked to this container so extract-and-structure uses its schema
+  containerId?: string | null;
 }
 
-async function uploadDocument({ file }: UploadDocumentInput) {
+async function uploadDocument({ file, containerId }: UploadDocumentInput) {
   if (!isAcceptedFile(file.name)) {
     throw new Error(
       `Unsupported file type. Accepted: ${ACCEPTED_FILE_EXTENSIONS.join(", ")}`,
@@ -35,7 +37,12 @@ async function uploadDocument({ file }: UploadDocumentInput) {
 
   const { data, error: insertError } = await supabase
     .from("documents")
-    .insert({ name: file.name, storage_path: storagePath, status: "queued" })
+    .insert({
+      name: file.name,
+      storage_path: storagePath,
+      status: "queued",
+      container_id: containerId ?? null,
+    })
     .select()
     .single();
 

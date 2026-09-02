@@ -24,6 +24,8 @@ function field(verified: boolean): FieldRow {
     source_span: null,
     confidence: "high",
     verified,
+    field_type: "text",
+    is_schema_field: true,
     created_at: new Date().toISOString(),
   };
 }

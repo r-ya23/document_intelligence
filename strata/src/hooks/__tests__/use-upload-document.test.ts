@@ -24,16 +24,17 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 // We use vi.hoisted() to create mocks that are safe to reference inside the
 // vi.mock() factory callback.
-const { mockStorageUpload, mockStorageRemove, mockFrom, mockSingle, mockSelectChain, mockInsertChain } =
-  vi.hoisted(() => {
-    const mockSingle = vi.fn();
-    const mockSelectChain = vi.fn(() => ({ single: mockSingle }));
-    const mockInsertChain = vi.fn(() => ({ select: mockSelectChain }));
-    const mockStorageUpload = vi.fn();
-    const mockStorageRemove = vi.fn();
-    const mockFrom = vi.fn((_table: string) => ({ insert: mockInsertChain }));
-    return { mockStorageUpload, mockStorageRemove, mockFrom, mockSingle, mockSelectChain, mockInsertChain };
-  });
+const { mockStorageUpload, mockStorageRemove, mockFrom, mockSingle } = vi.hoisted(() => {
+  const mockSingle = vi.fn();
+  const mockSelectChain = vi.fn(() => ({ single: mockSingle }));
+  const mockInsertChain = vi.fn((_values: Record<string, unknown>) => ({ select: mockSelectChain }));
+  type StorageResult = { data?: unknown; error: { message: string } | null };
+  const mockStorageUpload =
+    vi.fn<(path: string, file: File, opts?: { contentType?: string }) => Promise<StorageResult>>();
+  const mockStorageRemove = vi.fn<(paths: string[]) => Promise<StorageResult>>();
+  const mockFrom = vi.fn((_table: string) => ({ insert: mockInsertChain }));
+  return { mockStorageUpload, mockStorageRemove, mockFrom, mockSingle };
+});
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
@@ -111,7 +112,8 @@ describe("uploadDocument", () => {
 
   beforeAll(async () => {
     const mod = await import("@/lib/supabase");
-    supabaseClient = mod.supabase as Parameters<typeof uploadDocument>[0];
+    // The real client type doesn't overlap with our narrow mock shape; cast via unknown.
+    supabaseClient = mod.supabase as unknown as Parameters<typeof uploadDocument>[0];
   });
 
   beforeEach(() => {

@@ -15,11 +15,11 @@ import type { FieldRow } from "@/types/db";
 
 const mockSingle = vi.fn();
 const mockSelectAfterUpdate = vi.fn(() => ({ single: mockSingle }));
-const mockEqOnUpdate = vi.fn(() => ({ select: mockSelectAfterUpdate }));
-const mockUpdate = vi.fn(() => ({ eq: mockEqOnUpdate }));
+const mockEqOnUpdate = vi.fn((_col: string, _val: string) => ({ select: mockSelectAfterUpdate }));
+const mockUpdate = vi.fn((_values: Record<string, unknown>) => ({ eq: mockEqOnUpdate }));
 
-const mockInsertThen = vi.fn();
-const mockInsert = vi.fn(() => ({ then: mockInsertThen }));
+// insert() returns a Promise of { error } (mirrors the awaited supabase builder result).
+const mockInsert = vi.fn<(values: Record<string, unknown>) => Promise<{ error: { message: string } | null }>>();
 
 const mockFrom = vi.fn((table: string) => {
   if (table === "fields") return { update: mockUpdate };
@@ -30,24 +30,6 @@ const mockFrom = vi.fn((table: string) => {
 vi.mock("@/lib/supabase", () => ({
   supabase: { from: mockFrom },
 }));
-
-// ── Import AFTER the mock is set up ─────────────────────────────────────────
-// Dynamic import ensures the module picks up the vi.mock() substitution.
-async function getUpdateFieldAndLog() {
-  // We re-import each time to pick up the reset mocks; vitest caches modules
-  // across the file so we cannot use dynamic import inside each test.
-  // Instead, import once and rely on beforeEach resetting mock return values.
-  const mod = await import("@/hooks/use-update-field");
-  // updateFieldAndLog is not exported — access it via the module boundary test
-  // by extracting from the module's internal scope via a trick: we test it
-  // indirectly through the exported useUpdateField's mutationFn. But it's
-  // cleaner to refactor the function to be exported for testability.
-  //
-  // Since the function is not exported, we validate the *observable contract*
-  // by testing a re-implementation that mirrors the same code. Alternatively,
-  // see the note at the bottom of this file.
-  return mod;
-}
 
 // ── Minimal field fixture ────────────────────────────────────────────────────
 
@@ -60,6 +42,8 @@ function makeField(overrides: Partial<FieldRow> = {}): FieldRow {
     source_span: null,
     confidence: "high",
     verified: false,
+    field_type: "text",
+    is_schema_field: true,
     created_at: new Date().toISOString(),
     ...overrides,
   };
@@ -74,8 +58,11 @@ function makeField(overrides: Partial<FieldRow> = {}): FieldRow {
 // If the production function changes and these tests start passing when they
 // shouldn't, that's a maintenance signal to keep both in sync.
 
+// Loosely typed so the fields/audit_log branch union on `from()` doesn't make chain methods
+// appear "possibly undefined". The runtime behaviour is exercised by the mocks.
+// deno-lint-ignore no-explicit-any
 async function updateFieldAndLog(
-  supabase: { from: typeof mockFrom },
+  supabase: { from: (table: string) => any },
   { field, newValue }: { field: FieldRow; newValue: string },
 ) {
   const oldValue = field.value;
@@ -117,9 +104,7 @@ describe("updateFieldAndLog", () => {
 
     // Default happy-path behaviour: field update succeeds, audit insert succeeds
     mockSingle.mockResolvedValue({ data: updatedRow, error: null });
-    mockInsertThen.mockImplementation((resolve: (v: unknown) => void) =>
-      Promise.resolve({ data: null, error: null }).then(resolve),
-    );
+    mockInsert.mockResolvedValue({ error: null });
   });
 
   it("happy path — returns the updated row", async () => {
@@ -168,12 +153,7 @@ describe("updateFieldAndLog", () => {
   it("throws the audit-log error message when the field update succeeds but audit insert fails", async () => {
     // This is the critical contract: the caller must see the error even though
     // the field row was already updated. Silent swallowing here = lost audit trail.
-    mockInsertThen.mockImplementation((resolve: (v: unknown) => void) =>
-      Promise.resolve({
-        data: null,
-        error: { message: "audit table locked" },
-      }).then(resolve),
-    );
+    mockInsert.mockResolvedValue({ error: { message: "audit table locked" } });
 
     await expect(
       updateFieldAndLog(

@@ -25,6 +25,8 @@ function field(id: string, confidence: "high" | "review"): FieldRow {
     source_span: null,
     confidence,
     verified: false,
+    field_type: "text",
+    is_schema_field: true,
     created_at: new Date().toISOString(),
   };
 }

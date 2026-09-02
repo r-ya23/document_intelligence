@@ -7,8 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Supabase mock ─────────────────────────────────────────────────────────────
 
 const mockMaybeSingle = vi.fn();
-const mockEq = vi.fn(() => ({ maybeSingle: mockMaybeSingle }));
-const mockSelect = vi.fn(() => ({ eq: mockEq }));
+const mockEq = vi.fn((_col: string, _val: string) => ({ maybeSingle: mockMaybeSingle }));
+const mockSelect = vi.fn((_cols?: string) => ({ eq: mockEq }));
 const mockFrom = vi.fn((_table: string) => ({ select: mockSelect }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -58,6 +58,7 @@ function docRow(): DocumentRow {
     error_message: null,
     raw_text: "Invoice text",
     embedding: null,
+    container_id: null,
     created_at: new Date().toISOString(),
   };
 }

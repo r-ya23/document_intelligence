@@ -11,9 +11,8 @@ interface ContainerQueryPanelProps {
   container: Container;
 }
 
-// Wraps the existing query UI, scoped visually to this container. The underlying query-router
-// Edge Function isn't container-aware yet (no `containers`/`container_id` column in the DB), so
-// this still queries across all documents — framed as per-container until that wiring exists.
+// Query UI scoped to this container: passes container.id to query-router, which filters both the
+// structured (fields) and semantic (match_documents) paths to documents in this container only.
 export function ContainerQueryPanel({ container }: ContainerQueryPanelProps) {
   const [query, setQuery] = useState("");
   const { mutate, data, isPending, isError, error } = useRunQuery();
@@ -21,7 +20,7 @@ export function ContainerQueryPanel({ container }: ContainerQueryPanelProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
-    mutate(query.trim());
+    mutate({ query: query.trim(), containerId: container.id });
   }
 
   return (

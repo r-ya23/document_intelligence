@@ -1,14 +1,7 @@
 import { useState } from "react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { TableIcon, BracesIcon } from "lucide-react";
 import type { QueryResponse, FilterModeResult } from "@/types/api";
 import type { MatchDocumentsResult } from "@/types/db";
@@ -17,16 +10,42 @@ interface QueryResultsProps {
   response: QueryResponse;
 }
 
+const filterColumns: DataTableColumn<FilterModeResult>[] = [
+  { id: "name", header: "Name", cell: (d) => d.name, className: "font-medium" },
+  {
+    id: "type",
+    header: "Type",
+    cell: (d) => d.doc_type ?? "—",
+    className: "text-muted-foreground",
+  },
+  { id: "status", header: "Status", cell: (d) => d.status },
+  {
+    id: "fields",
+    header: "Matching fields",
+    cell: (d) => d.fields.map((f) => `${f.label}: ${f.value ?? "—"}`).join(", "),
+    className: "text-muted-foreground",
+  },
+];
+
+const semanticColumns: DataTableColumn<MatchDocumentsResult>[] = [
+  { id: "name", header: "Name", cell: (d) => d.name, className: "font-medium" },
+  {
+    id: "type",
+    header: "Type",
+    cell: (d) => d.doc_type ?? "—",
+    className: "text-muted-foreground",
+  },
+  { id: "similarity", header: "Similarity", cell: (d) => `${(d.similarity * 100).toFixed(1)}%` },
+];
+
 // Table for structured filter results (columns = field labels) — JSON for semantic search
-// results, since similarity matches don't map cleanly to a fixed set of columns. Mode is always
-// shown so the user can see which path the query classification took, as a trust/debug signal.
+// results too, via a toggle, since raw JSON is a useful debug view. Mode is always shown so the
+// user can see which path the query classification took, as a trust/debug signal. Table view uses
+// the shared DataTable, so both result modes are paginated.
 export function QueryResults({ response }: QueryResultsProps) {
   const [view, setView] = useState<"table" | "json">("table");
 
-  if (response.mode === "semantic" && response.results.length === 0) {
-    return <EmptyState mode={response.mode} />;
-  }
-  if (response.mode === "filter" && response.results.length === 0) {
+  if (response.results.length === 0) {
     return <EmptyState mode={response.mode} />;
   }
 
@@ -61,9 +80,9 @@ export function QueryResults({ response }: QueryResultsProps) {
           {JSON.stringify(response.results, null, 2)}
         </pre>
       ) : response.mode === "filter" ? (
-        <FilterResultsTable results={response.results} />
+        <DataTable columns={filterColumns} data={response.results} getRowKey={(d) => d.id} />
       ) : (
-        <SemanticResultsTable results={response.results} />
+        <DataTable columns={semanticColumns} data={response.results} getRowKey={(d) => d.id} />
       )}
     </div>
   );
@@ -74,55 +93,5 @@ function EmptyState({ mode }: { mode: "filter" | "semantic" }) {
     <div className="rounded-md border border-dashed py-12 text-center text-sm text-muted-foreground">
       No {mode === "filter" ? "documents matched those filters" : "semantic matches found"}.
     </div>
-  );
-}
-
-function FilterResultsTable({ results }: { results: FilterModeResult[] }) {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Matching fields</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {results.map((doc) => (
-          <TableRow key={doc.id}>
-            <TableCell className="font-medium">{doc.name}</TableCell>
-            <TableCell className="text-muted-foreground">{doc.doc_type ?? "—"}</TableCell>
-            <TableCell>{doc.status}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {doc.fields.map((f) => `${f.label}: ${f.value ?? "—"}`).join(", ")}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function SemanticResultsTable({ results }: { results: MatchDocumentsResult[] }) {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Similarity</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {results.map((doc) => (
-          <TableRow key={doc.id}>
-            <TableCell className="font-medium">{doc.name}</TableCell>
-            <TableCell className="text-muted-foreground">{doc.doc_type ?? "—"}</TableCell>
-            <TableCell>{(doc.similarity * 100).toFixed(1)}%</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
   );
 }

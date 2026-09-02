@@ -3,8 +3,11 @@ import { useContainers, useAllExtractions } from "@/features/containers/use-cont
 import { ContainerCard } from "@/components/containers/container-card";
 import { NewContainerCard } from "@/components/containers/new-container-card";
 import { NewContainerDialog } from "@/components/containers/new-container-dialog";
-import { TrendingUpIcon, ZapIcon, CheckCircle2Icon } from "lucide-react";
+import { TrendingUpIcon, ZapIcon, CheckCircle2Icon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+
+// How many container cards to show before "View more" reveals the rest.
+const COLLAPSED_CARD_COUNT = 6;
 
 // ── Stat card ────────────────────────────────────────────────────────────────
 function StatCard({
@@ -65,8 +68,15 @@ export function ContainerDashboardPage() {
   const containers = useContainers();
   const extractions = useAllExtractions();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const { theme } = useTheme();
   const dark = theme === "dark";
+
+  // Collapse the grid to the first N cards; "View more" reveals the rest. The New Container card
+  // always shows, so it sits after whatever slice is visible.
+  const canCollapse = containers.length > COLLAPSED_CARD_COUNT;
+  const visibleContainers =
+    canCollapse && !expanded ? containers.slice(0, COLLAPSED_CARD_COUNT) : containers;
 
   const statsByContainer = useMemo(() => {
     const stats = new Map<string, { docCount: number; extractionCount: number }>();
@@ -146,7 +156,7 @@ export function ContainerDashboardPage() {
           Containers
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {containers.map((container) => {
+          {visibleContainers.map((container) => {
             const stats = statsByContainer.get(container.id) ?? {
               docCount: 0,
               extractionCount: 0,
@@ -162,6 +172,34 @@ export function ContainerDashboardPage() {
           })}
           <NewContainerCard onClick={() => setDialogOpen(true)} />
         </div>
+
+        {/* View more / less — only when there are more containers than the collapsed limit. */}
+        {canCollapse && (
+          <div className="mt-5 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+              style={{
+                borderColor: dark ? "#30363D" : "#E5E7EB",
+                color: dark ? "#8B949E" : "#6B7280",
+                background: dark ? "#161B22" : "#FFFFFF",
+              }}
+            >
+              {expanded ? (
+                <>
+                  Show less
+                  <ChevronUpIcon className="size-4" />
+                </>
+              ) : (
+                <>
+                  View {containers.length - COLLAPSED_CARD_COUNT} more
+                  <ChevronDownIcon className="size-4" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       <NewContainerDialog open={dialogOpen} onOpenChange={setDialogOpen} />

@@ -45,6 +45,13 @@ export async function extractAndStructure(documentId: string): Promise<ExtractRe
   });
 }
 
-export async function routeQuery(query: string): Promise<QueryResponse | ApiErrorResponse> {
-  return invoke<QueryResponse | ApiErrorResponse, QueryRequest>("query-router", { query });
+// containerId scopes both search modes to a single container; omit/null for global search.
+export async function routeQuery(
+  query: string,
+  containerId?: string | null,
+): Promise<QueryResponse | ApiErrorResponse> {
+  return invoke<QueryResponse | ApiErrorResponse, QueryRequest>("query-router", {
+    query,
+    container_id: containerId ?? null,
+  });
 }

@@ -4,46 +4,55 @@ import { ContainerCard } from "@/components/containers/container-card";
 import { NewContainerCard } from "@/components/containers/new-container-card";
 import { NewContainerDialog } from "@/components/containers/new-container-dialog";
 import { TrendingUpIcon, ZapIcon, CheckCircle2Icon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
 
-// ── Stat card (Stitch "Editorial Intelligence" design) ────────────────────────
+// ── Stat card ────────────────────────────────────────────────────────────────
 function StatCard({
   label,
   value,
   sub,
   icon: Icon,
   iconHighlight = false,
+  dark,
 }: {
   label: string;
   value: number | string;
   sub: string;
   icon: typeof TrendingUpIcon;
   iconHighlight?: boolean;
+  dark: boolean;
 }) {
   return (
     <div
-      className="flex flex-col gap-3 rounded-xl p-5"
-      style={{ background: "#F5F3EE", border: "1px solid #E5E2DA" }}
+      className="flex flex-col gap-3 rounded-xl p-5 transition-colors duration-200"
+      style={{
+        background: dark ? "#1C2128" : "#FFFFFF",
+        border: `1px solid ${dark ? "#30363D" : "#E5E7EB"}`,
+        boxShadow: dark
+          ? "none"
+          : "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)",
+      }}
     >
       <div className="flex items-start justify-between">
         <span
           className="text-[11px] font-semibold uppercase tracking-widest"
-          style={{ color: "#9B9B9B", letterSpacing: "0.08em" }}
+          style={{ color: dark ? "#8B949E" : "#9CA3AF", letterSpacing: "0.08em" }}
         >
           {label}
         </span>
         <Icon
           className="size-4 shrink-0"
-          style={{ color: iconHighlight ? "#5A7A00" : "#B8B4AC" }}
+          style={{ color: iconHighlight ? "#CCFF01" : dark ? "#8B949E" : "#9CA3AF" }}
         />
       </div>
       <div>
         <p
           className="text-4xl font-semibold leading-none tracking-tight"
-          style={{ color: "#1A1A1A", letterSpacing: "-0.02em" }}
+          style={{ color: dark ? "#F0F6FC" : "#111827", letterSpacing: "-0.02em" }}
         >
           {value}
         </p>
-        <p className="mt-1.5 text-[13px]" style={{ color: "#6B6B6B" }}>
+        <p className="mt-1.5 text-[13px]" style={{ color: dark ? "#8B949E" : "#6B7280" }}>
           {sub}
         </p>
       </div>
@@ -56,6 +65,8 @@ export function ContainerDashboardPage() {
   const containers = useContainers();
   const extractions = useAllExtractions();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { theme } = useTheme();
+  const dark = theme === "dark";
 
   const statsByContainer = useMemo(() => {
     const stats = new Map<string, { docCount: number; extractionCount: number }>();
@@ -78,20 +89,23 @@ export function ContainerDashboardPage() {
         <div>
           <h1
             className="text-2xl font-semibold leading-tight"
-            style={{ color: "#1A1A1A", letterSpacing: "-0.01em" }}
+            style={{ color: dark ? "#F0F6FC" : "#111827", letterSpacing: "-0.01em" }}
           >
             Your Containers
           </h1>
-          <p className="mt-1.5 text-sm" style={{ color: "#6B6B6B" }}>
+          <p className="mt-1.5 text-sm" style={{ color: dark ? "#8B949E" : "#6B7280" }}>
             Each container holds one kind of document — its extractions, its fields, its own query.
           </p>
         </div>
-        {/* Ink-black primary CTA */}
+        {/* Primary CTA */}
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
-          className="flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-80"
-          style={{ background: "#1A1A1A" }}
+          className="flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all hover:opacity-90 active:scale-95"
+          style={{
+            background: dark ? "#CCFF01" : "#111827",
+            color: dark ? "#0F1117" : "#FFFFFF",
+          }}
         >
           + New Container
         </button>
@@ -104,12 +118,14 @@ export function ContainerDashboardPage() {
           value={totalDocs}
           sub={`across ${containers.length} container${containers.length !== 1 ? "s" : ""}`}
           icon={TrendingUpIcon}
+          dark={dark}
         />
         <StatCard
           label="Extractions"
           value={totalExtractions}
           sub="batches processed"
           icon={ZapIcon}
+          dark={dark}
         />
         <StatCard
           label="Pending Review"
@@ -117,6 +133,7 @@ export function ContainerDashboardPage() {
           sub="all fields verified"
           icon={CheckCircle2Icon}
           iconHighlight
+          dark={dark}
         />
       </div>
 
@@ -124,7 +141,7 @@ export function ContainerDashboardPage() {
       <div>
         <p
           className="mb-4 text-[11px] font-semibold uppercase tracking-widest"
-          style={{ color: "#9B9B9B", letterSpacing: "0.08em" }}
+          style={{ color: dark ? "#8B949E" : "#9CA3AF", letterSpacing: "0.08em" }}
         >
           Containers
         </p>

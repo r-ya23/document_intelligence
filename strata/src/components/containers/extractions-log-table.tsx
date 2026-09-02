@@ -61,7 +61,13 @@ export function ExtractionsLogTable({ extractions, docType }: ExtractionsLogTabl
           <span className="shrink-0 text-xs text-muted-foreground">
             {extraction.docCount} docs
           </span>
-          <Badge variant="secondary" className="shrink-0 capitalize">
+          <Badge
+            variant={extraction.status === "failed" ? "destructive" : "secondary"}
+            className={cn(
+              "shrink-0 capitalize",
+              extraction.status === "processing" && "text-muted-foreground",
+            )}
+          >
             {extraction.status}
           </Badge>
         </div>

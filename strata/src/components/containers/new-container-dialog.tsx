@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,9 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { containerStore } from "@/features/containers/use-containers";
-import type { VerifyMode } from "@/features/containers/types";
-import type { DocType } from "@/types/db";
+import { useCreateContainer } from "@/features/containers/use-containers";
+import type { ContainerFieldInput, VerifyMode } from "@/features/containers/types";
+import type { DocType, FieldType } from "@/types/db";
 
 const DOC_TYPE_OPTIONS: { value: DocType; label: string }[] = [
   { value: "invoice", label: "Invoice" },
@@ -27,6 +29,36 @@ const VERIFY_MODE_OPTIONS: { value: VerifyMode; label: string }[] = [
   { value: "auto", label: "Auto verify" },
   { value: "manual", label: "Manual verify" },
 ];
+
+const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "currency", label: "Currency" },
+  { value: "date", label: "Date" },
+];
+
+// Starter schema per doc type so the dialog opens with a sensible, editable set of fields
+// instead of a blank slate — this is what makes a container a typed dataset, not a folder.
+const STARTER_SCHEMA: Record<DocType, ContainerFieldInput[]> = {
+  invoice: [
+    { label: "vendor", fieldType: "text", required: true },
+    { label: "invoice_number", fieldType: "text", required: false },
+    { label: "total_due", fieldType: "currency", required: true },
+    { label: "due_date", fieldType: "date", required: false },
+  ],
+  contract: [
+    { label: "party_a", fieldType: "text", required: true },
+    { label: "party_b", fieldType: "text", required: true },
+    { label: "effective_date", fieldType: "date", required: false },
+    { label: "term_length", fieldType: "text", required: false },
+  ],
+  resume: [
+    { label: "full_name", fieldType: "text", required: true },
+    { label: "email", fieldType: "text", required: false },
+    { label: "years_experience", fieldType: "number", required: false },
+  ],
+  other: [{ label: "title", fieldType: "text", required: false }],
+};
 
 interface NewContainerDialogProps {
   open: boolean;
@@ -67,14 +99,17 @@ function ChipRow<T extends string>({
 
 export function NewContainerDialog({ open, onOpenChange }: NewContainerDialogProps) {
   const navigate = useNavigate();
+  const { mutateAsync: createContainer, isPending } = useCreateContainer();
   const [name, setName] = useState("");
   const [docType, setDocType] = useState<DocType>("invoice");
   const [defaultMode, setDefaultMode] = useState<VerifyMode>("auto");
+  const [fields, setFields] = useState<ContainerFieldInput[]>(STARTER_SCHEMA.invoice);
 
   function reset() {
     setName("");
     setDocType("invoice");
     setDefaultMode("auto");
+    setFields(STARTER_SCHEMA.invoice);
   }
 
   function handleOpenChange(next: boolean) {
@@ -82,25 +117,55 @@ export function NewContainerDialog({ open, onOpenChange }: NewContainerDialogPro
     onOpenChange(next);
   }
 
-  function handleCreate() {
+  // Swapping doc type reseeds the schema with that type's starter fields (only if the user
+  // hasn't diverged — keep it simple: always reseed, since they can still edit afterwards).
+  function handleDocTypeChange(next: DocType) {
+    setDocType(next);
+    setFields(STARTER_SCHEMA[next]);
+  }
+
+  function updateField(index: number, patch: Partial<ContainerFieldInput>) {
+    setFields((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  }
+
+  function addField() {
+    setFields((prev) => [...prev, { label: "", fieldType: "text", required: false }]);
+  }
+
+  function removeField(index: number) {
+    setFields((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleCreate() {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const container = containerStore.createContainer({
-      name: trimmed,
-      docType,
-      defaultMode,
-    });
-    handleOpenChange(false);
-    navigate(`/containers/${container.id}`);
+    try {
+      const container = await createContainer({
+        name: trimmed,
+        docType,
+        defaultMode,
+        fields,
+      });
+      handleOpenChange(false);
+      navigate(`/containers/${container.id}`);
+    } catch (error) {
+      toast.error("Couldn't create container", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
+
+  // Fields are optional: a container with no schema falls back to open-ended extraction
+  // (the edge function detects zero container_fields and lets the model choose labels).
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create a container</DialogTitle>
           <DialogDescription>
-            Group documents of the same kind together — invoices, resumes, contracts.
+            A container groups documents of one kind. Optionally define a field schema so every
+            document conforms to it — leave it empty to let extraction choose fields automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -113,15 +178,12 @@ export function NewContainerDialog({ open, onOpenChange }: NewContainerDialogPro
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Vendor invoices"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
-              }}
             />
           </div>
 
           <div className="space-y-1.5">
             <Label>Document type</Label>
-            <ChipRow options={DOC_TYPE_OPTIONS} value={docType} onChange={setDocType} />
+            <ChipRow options={DOC_TYPE_OPTIONS} value={docType} onChange={handleDocTypeChange} />
           </div>
 
           <div className="space-y-1.5">
@@ -132,14 +194,80 @@ export function NewContainerDialog({ open, onOpenChange }: NewContainerDialogPro
               onChange={setDefaultMode}
             />
           </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Field schema <span className="text-muted-foreground">(optional)</span></Label>
+              <Button type="button" variant="ghost" size="sm" onClick={addField}>
+                <PlusIcon className="size-3.5" />
+                Add field
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {fields.map((field, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    value={field.label}
+                    onChange={(e) => updateField(index, { label: e.target.value })}
+                    placeholder="field_label"
+                    className="flex-1 font-mono text-xs"
+                    aria-label={`Field ${index + 1} label`}
+                  />
+                  <select
+                    value={field.fieldType}
+                    onChange={(e) =>
+                      updateField(index, { fieldType: e.target.value as FieldType })
+                    }
+                    className="rounded-md border border-border bg-background px-2 py-2 text-xs"
+                    aria-label={`Field ${index + 1} type`}
+                  >
+                    {FIELD_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => updateField(index, { required: !field.required })}
+                    className={cn(
+                      "rounded-md border px-2 py-2 text-xs transition-colors",
+                      field.required
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground",
+                    )}
+                    aria-pressed={field.required}
+                    title="Toggle required"
+                  >
+                    Req
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeField(index)}
+                    aria-label={`Remove field ${index + 1}`}
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+              {fields.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No schema defined — extraction will pick fields automatically. Add fields to
+                  make every document conform to a fixed shape.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleCreate} disabled={!name.trim()}>
-            Create container
+          <Button onClick={handleCreate} disabled={!name.trim() || isPending}>
+            {isPending ? "Creating…" : "Create container"}
           </Button>
         </DialogFooter>
       </DialogContent>

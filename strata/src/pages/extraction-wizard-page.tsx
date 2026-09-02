@@ -8,7 +8,8 @@ import { StepUpload } from "@/components/wizard/step-upload";
 import { StepExtract } from "@/components/wizard/step-extract";
 import { StepVerify } from "@/components/wizard/step-verify";
 import { StepPublish } from "@/components/wizard/step-publish";
-import { useContainer, containerStore } from "@/features/containers/use-containers";
+import { useQueryClient } from "@tanstack/react-query";
+import { useContainer } from "@/features/containers/use-containers";
 import { useUploadDocument } from "@/hooks/use-upload-document";
 import { useDocument } from "@/hooks/use-document";
 import { useVerifyAllFields } from "@/hooks/use-update-field";
@@ -21,6 +22,7 @@ export function ExtractionWizardPage() {
   const { containerId } = useParams<{ containerId: string }>();
   const container = useContainer(containerId);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [step, setStep] = useState<WizardStepNumber>(1);
   const [verifyMode, setVerifyMode] = useState<VerifyMode>(container?.defaultMode ?? "auto");
@@ -38,8 +40,8 @@ export function ExtractionWizardPage() {
   const document = documentQuery.data;
   const fields = fieldsQuery.data ?? [];
 
-  // Sync verifyMode to the container's default once it loads (container may not be resolved yet
-  // on first render, since useContainer reads from the mock store).
+  // Sync verifyMode to the container's default once it loads (the container may not be resolved
+  // yet on first render, since useContainer resolves from the async containers query).
   useEffect(() => {
     if (container) setVerifyMode(container.defaultMode);
   }, [container]);
@@ -72,7 +74,7 @@ export function ExtractionWizardPage() {
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Container not found.</p>
         <Button variant="outline" asChild>
-          <Link to="/">Back to containers</Link>
+          <Link to="/dashboard">Back to containers</Link>
         </Button>
       </div>
     );
@@ -87,7 +89,7 @@ export function ExtractionWizardPage() {
     if (!file) return;
     setStarting(true);
     try {
-      const doc = await uploadDocument({ file });
+      const doc = await uploadDocument({ file, containerId: container!.id });
       setDocumentId(doc.id);
       setStep(2);
       await extractAndStructure(doc.id);
@@ -103,16 +105,13 @@ export function ExtractionWizardPage() {
   function handlePublish() {
     if (!documentId || !file) return;
     setIsPublishing(true);
-    // Simulated publish latency matches the mockup's own pacing (mock "indexing" step) — there's
-    // no real container/extraction table to write to yet, so this is a timed UI transition, not
-    // a network call.
+    // The document already persists with this container_id and its verified fields, so "publish"
+    // is just the final UI transition. Refresh the container's extractions (derived from
+    // documents) so the new one shows up when the user returns to the container. The short delay
+    // matches the mockup's "indexing" pacing.
     setTimeout(() => {
-      containerStore.recordExtraction({
-        containerId: container!.id,
-        docCount: 1,
-        mode: verifyMode,
-        documentIds: [documentId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["extractions", container!.id] });
+      queryClient.invalidateQueries({ queryKey: ["extractions", "all"] });
       setIsPublishing(false);
       setIsPublished(true);
     }, 900);

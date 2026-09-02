@@ -16,6 +16,11 @@ export type FieldConfidence = "high" | "review";
 
 export type DocType = "invoice" | "contract" | "resume" | "other";
 
+// Type of an extracted/schema field — drives query-time casting for filters + aggregates.
+export type FieldType = "text" | "number" | "currency" | "date";
+
+export type VerifyMode = "auto" | "manual";
+
 export interface DocumentRow {
   id: string;
   name: string;
@@ -25,6 +30,7 @@ export interface DocumentRow {
   error_message: string | null;
   raw_text: string | null;
   embedding: number[] | null;
+  container_id: string | null;
   created_at: string;
 }
 
@@ -36,6 +42,30 @@ export interface FieldRow {
   source_span: string | null;
   confidence: FieldConfidence;
   verified: boolean;
+  field_type: FieldType;
+  // false when the model surfaced a field not defined in the container schema (loose-with-flagging)
+  is_schema_field: boolean;
+  created_at: string;
+}
+
+// A container = a persisted, schema-driven dataset (see 20260902000000_containers_schema.sql).
+export interface ContainerRow {
+  id: string;
+  name: string;
+  doc_type: DocType | null;
+  default_mode: VerifyMode;
+  created_at: string;
+}
+
+// One row per field a container expects its documents to conform to.
+export interface ContainerFieldRow {
+  id: string;
+  container_id: string;
+  label: string;
+  field_type: FieldType;
+  required: boolean;
+  description: string | null;
+  sort_order: number;
   created_at: string;
 }
 
@@ -53,6 +83,9 @@ export interface MatchDocumentsResult {
   doc_type: DocType | null;
   raw_text: string | null;
   similarity: number;
+  // provenance: which container this hit came from (null for uncontained documents)
+  container_id: string | null;
+  container_name: string | null;
 }
 
 // Minimal Supabase `Database` generic shape — enough for the typed client to check
@@ -85,6 +118,20 @@ export interface Database {
         Update: Partial<AuditLogRow> & Record<string, unknown>;
         Relationships: [];
       };
+      containers: {
+        Row: ContainerRow & Record<string, unknown>;
+        Insert: Partial<ContainerRow> & Pick<ContainerRow, "name"> & Record<string, unknown>;
+        Update: Partial<ContainerRow> & Record<string, unknown>;
+        Relationships: [];
+      };
+      container_fields: {
+        Row: ContainerFieldRow & Record<string, unknown>;
+        Insert: Partial<ContainerFieldRow> &
+          Pick<ContainerFieldRow, "container_id" | "label"> &
+          Record<string, unknown>;
+        Update: Partial<ContainerFieldRow> & Record<string, unknown>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -93,8 +140,17 @@ export interface Database {
           query_embedding: number[];
           match_threshold?: number;
           match_count?: number;
+          filter_container_id?: string | null;
         };
         Returns: MatchDocumentsResult[];
+      };
+      container_field_aggregate: {
+        Args: {
+          p_container_id: string;
+          p_label: string;
+          p_agg?: "sum" | "avg" | "count" | "min" | "max";
+        };
+        Returns: number;
       };
     };
   };

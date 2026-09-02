@@ -1,175 +1,157 @@
-# Strata — AI-Powered Document Intelligence Platform
+# Strata — AI Document Intelligence
 
-**Strata** is an enterprise-grade document intelligence application that transforms unstructured business documents (PDFs, invoices, receipts, contracts, resumes) into structured, queryable data using multi-modal AI, schema-driven containers, confidence verification, and vector-based semantic search.
-
----
-
-## 🚀 Key Features
-
-* **Overview Landing Screen**: Highlighting the problem of document chaos vs. Strata's automated intelligence containers, complete with an interactive onboarding flow.
-* **Smart Document Containers**: Organize document types (Invoices, Contracts, Resumes, Tax Forms) into dedicated containers with custom field schema definitions.
-* **Multi-Modal AI Extractions**: Integrates Mistral OCR & LLM structuring to automatically parse key-value pairs, target labels, confidence scores, and source text bounding spans.
-* **4-Step Guided Extraction Wizard**:
-  1. **Upload**: Drag-and-drop file ingestion into Supabase Storage.
-  2. **Extract**: Automated OCR processing & LLM structuring.
-  3. **Verify**: Field-level confidence flags (`high` vs `review`) with interactive source text highlights and audit trails.
-  4. **Publish**: Save verified records to the structured database.
-* **Dual-Mode Query Engine**:
-  * **Structured SQL Filters**: Filter fields by key-value parameters.
-  * **Semantic Vector Search**: Powered by `pgvector` and Voyage AI (`voyage-3`) 1024-dimensional embeddings for natural language search across document contents.
-* **Modern UI & Themes**:
-  * **Collapsible Side Navigation**: Persistent state (`localStorage`) with smooth expand/collapse transitions.
-  * **Light & Dark Mode Switcher**: Fully-themed glassmorphism interface with toggle controls.
+Strata turns unstructured business documents (invoices, contracts, resumes, scans) into structured, queryable data using multi-modal AI, schema-driven containers, human verification, and vector-based semantic search.
 
 ---
 
-## 🛠️ Tech Stack
+## What makes it different: schema-driven containers
 
-### **Frontend (`/strata`)**
-* **Core**: React 19, TypeScript, Vite
-* **Styling**: Tailwind CSS v4, Vanilla CSS variable tokens, Lucide React icons
-* **State & Data Fetching**: TanStack React Query v5, React Router v6
-* **Feedback**: Sonner Toast notifications
+A **container** is a *typed dataset*, not just a folder. When you create one, you can define its field schema — e.g. an invoices container with `vendor` (text), `total_due` (currency), `due_date` (date). Every document added to that container is extracted **against that schema**, so labels and types stay consistent across the whole set.
 
-### **Backend & Database (`/supabase`)**
-* **Database**: PostgreSQL with `pgvector` extension for vector embeddings & similarity search
-* **Storage**: Supabase Storage Buckets for document asset hosting
-* **Serverless Functions**: Deno-based Supabase Edge Functions (`extract-and-structure`, `query-router`)
-* **AI & Embedding Models**:
-  * **Mistral AI**: OCR (`mistral-ocr-latest`) and Chat (`mistral-small-latest`) for field parsing
-  * **Voyage AI**: `voyage-3` (1024-dim embeddings) for document indexing
+That consistency is what makes the rest work:
+
+- **Structured filters** are reliable, because `total_due` means the same thing on every document.
+- **Semantic search** can be scoped to one container (its own domain) or run globally across all datasets, with provenance showing which container each hit came from.
+- The schema is **optional** — leave it empty and extraction falls back to open-ended, letting the model choose the labels.
 
 ---
 
-## 📂 Project Structure
+## Key features
+
+- **Schema-driven extraction**: extraction targets the container's defined fields; fields found outside the schema are captured and flagged as "additional" rather than dropped. Missing required fields are surfaced for review.
+- **Multi-modal AI**:
+  - Mistral OCR (`mistral-ocr-latest`) reads PDFs/images and returns structured fields in one call via `document_annotation_format`.
+  - Plain-text files (`.txt/.md/.csv/.json`) are structured via Mistral chat (`mistral-small-latest`).
+  - Each field carries a self-reported confidence (`high` / `review`) and a source-text span for highlighting.
+- **4-step extraction wizard**: Upload → Extract → Verify → Publish. Auto mode verifies all fields and advances; manual mode stops for review. Status updates live via Supabase Realtime.
+- **Verification loop**: inline field editing, source-text highlighting, per-field confidence, and an audit trail (old → new value).
+- **Query engine (scoped + global)**: natural-language queries are classified into a structured `filter` (predicates over `fields`) or `semantic` (pgvector cosine similarity over document embeddings). Both accept an optional `container_id`.
+- **Clean failure handling**: a failed extraction fails the whole document — partial fields are removed, the document is marked `failed` with the error shown in the UI, and the uploaded file is kept in Storage for debugging/retry.
+- **UI**: reusable paginated tables (`DataTable`), searchable document list, dashboard with "view more/less" cards and stat cards, sticky collapsible sidebar + header, light/dark mode.
+
+---
+
+## Tech stack
+
+**Frontend (`/strata`)**
+- React 19, TypeScript, Vite
+- Tailwind CSS v4, Radix UI primitives, Lucide icons
+- TanStack React Query v5, React Router v6
+- Sonner toasts
+
+**Backend (`/supabase`)**
+- PostgreSQL with `pgvector`
+- Supabase Storage (document files)
+- Deno Edge Functions: `extract-and-structure`, `query-router`
+- Mistral AI (OCR + chat) for extraction; Voyage AI (`voyage-3`, 1024-dim) for embeddings
+
+---
+
+## Data model
+
+| Table | Purpose |
+|---|---|
+| `containers` | A dataset: name, doc_type, default verify mode |
+| `container_fields` | The container's field schema (label, type, required, description) |
+| `documents` | Uploaded file + status + `container_id` + `embedding` (`vector(1024)`) |
+| `fields` | Extracted key/value pairs (+ confidence, verified, field_type, is_schema_field, source_span) |
+| `audit_log` | History of field corrections (old → new) |
+
+Key RPCs:
+- `match_documents(query_embedding, match_threshold, match_count, filter_container_id)` — semantic search, optionally scoped to a container, returns provenance.
+- `container_field_aggregate(container_id, label, agg)` — numeric rollups (`sum/avg/count/min/max`) over a container's fields.
+
+---
+
+## Project structure
 
 ```text
 document_intelligence/
-├── README.md                      # Project documentation and setup guide
-├── SECRETS.md                     # Detailed environment & API key guide
-├── decisions.md                   # Architectural and schema design rationale
-├── strata/                        # React + Vite frontend application
-│   ├── src/
-│   │   ├── components/            # UI components, layout, containers, wizard
-│   │   ├── features/              # Feature hooks & state management
-│   │   ├── hooks/                 # Document & extraction queries
-│   │   ├── lib/                   # Supabase client & ThemeProvider context
-│   │   ├── pages/                 # Welcome, Dashboard, Details, Query pages
-│   │   └── router.tsx             # React Router routing configuration
-│   └── package.json
-└── supabase/                      # Supabase backend configuration
-    ├── config.toml                # Supabase CLI configuration
-    ├── functions/                 # Deno Edge Functions
-    │   ├── _shared/               # Shared CORS & Voyage embedding utilities
-    │   ├── extract-and-structure/ # OCR & structuring pipeline
-    │   └── query-router/          # Vector & SQL search execution
-    └── migrations/                # Database schemas & pgvector migration SQL
+├── README.md
+├── decisions.md                    # Architectural tradeoffs and what a prod version would change
+├── strata/                         # React + Vite frontend
+│   └── src/
+│       ├── components/             # UI, containers, wizard, shared DataTable
+│       ├── features/containers/    # container view models + Supabase-backed hooks
+│       ├── hooks/                  # document/extraction/query hooks
+│       ├── lib/                    # supabase client, edge-function invokers, theme
+│       ├── pages/                  # dashboard, container detail, wizard, documents, query
+│       └── types/                  # db.ts (schema types), api.ts (edge fn contracts)
+└── supabase/
+    ├── functions/
+    │   ├── _shared/                # CORS, admin client, embeddings
+    │   ├── extract-and-structure/  # schema-driven OCR + structuring pipeline
+    │   └── query-router/           # filter vs semantic query routing
+    └── migrations/                 # schema, storage, pgvector, containers, search RPCs
 ```
 
 ---
 
-## ⚙️ Initial Setup & Installation
+## Setup
 
 ### Prerequisites
-Make sure you have the following installed on your system:
-* [Node.js](https://nodejs.org/) (v18+ recommended)
-* [Docker Desktop](https://www.docker.com/) (required for local Supabase development)
-* [Supabase CLI](https://supabase.com/docs/guides/cli) (`npm i -g supabase` or `brew install supabase/tap/supabase`)
+- [Node.js](https://nodejs.org/) v20+ (the `shadcn` CLI requires Node 20+; the rest works on 18)
+- [Docker Desktop](https://www.docker.com/) (for the local Supabase stack)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) — via `npx supabase ...`, Scoop, or Homebrew (not `npm i -g`)
 
----
-
-### Step 1: Clone & Install Frontend Dependencies
-
+### 1. Install frontend deps
 ```bash
 cd strata
 npm install
 ```
 
----
+### 2. Environment variables
 
-### Step 2: Configure Environment Variables
-
-This project uses two separate environment surfaces:
-
-#### 1. Frontend Environment (`strata/.env.local`)
-Create `strata/.env.local` by copying `strata/.env.example`:
-
+**`strata/.env.local`** (copy from `.env.example`):
 ```bash
 VITE_SUPABASE_URL=http://127.0.0.1:54321
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_ANON_KEY=your_local_anon_key
 ```
 
-#### 2. Edge Functions Environment (`supabase/functions/.env`)
-Create `supabase/functions/.env` by copying `supabase/functions/.env.example`:
-
+**`supabase/functions/.env`** (copy from `.env.example`):
 ```bash
 MISTRAL_API_KEY=your_mistral_api_key
-EMBEDDING_API_KEY=your_voyage_ai_api_key
+EMBEDDING_API_KEY=your_voyage_ai_api_key   # must be a Voyage AI key, not a MongoDB Atlas key
 ```
 
-> 📖 **Note:** For a complete breakdown of API key retrieval and cloud deployments, refer to [`SECRETS.md`](./SECRETS.md).
-
----
-
-### Step 3: Start Supabase Backend (Local Development)
-
-Start the local Supabase stack (Postgres database, Storage, and Realtime):
-
+### 3. Start Supabase (applies all migrations)
 ```bash
-# Run at root of document_intelligence directory
+# from the repo root
 supabase start
 ```
+If you add migrations after the DB already exists, apply them with `supabase migration up` (or rebuild with `supabase db reset`).
 
-This will initialize the local database and automatically apply all SQL migrations in `supabase/migrations/` (including `pgvector` setup, tables, and RPC functions).
-
----
-
-### Step 4: Serve Edge Functions Locally
-
-Serve the Deno Edge Functions locally:
-
+### 4. Serve edge functions
 ```bash
 supabase functions serve --env-file ./supabase/functions/.env
 ```
+Restart this process after changing function code or env — it doesn't always hot-reload.
 
----
-
-### Step 5: Start the Frontend Application
-
-In a new terminal window, start the React development server:
-
+### 5. Start the frontend
 ```bash
 cd strata
 npm run dev
 ```
-
-Open your browser and navigate to `http://localhost:5173`.
-
----
-
-## 🗄️ Database & Embeddings Overview
-
-* **Documents Table**: `documents`
-* **Fields Table**: `fields`
-* **Embeddings Storage**: Stored in `documents.embedding` as a `vector(1024)` column.
-* **Vector Match RPC**: `match_documents(query_embedding, match_threshold, match_count)` performs cosine distance vector searches across all document embeddings.
+Open `http://localhost:5173`.
 
 ---
 
-## 🛠️ Build & Scripts
-
-From the `strata/` directory:
+## Scripts (from `strata/`)
 
 ```bash
-# Start local frontend dev server
-npm run dev
-
-# TypeScript type-check and Vite production build
-npm run build
-
-# Preview production build locally
-npm run preview
-
-# Run ESLint checks
-npm run lint
+npm run dev       # dev server
+npm run build     # tsc -b + vite build
+npm run preview   # preview the production build
+npm run lint      # eslint
+npm run test      # vitest (UI tests)
 ```
+
+---
+
+## Notes & known limitations
+
+See [`decisions.md`](./decisions.md) for the full list. In brief:
+- Confidence is self-reported by the model, not a calibrated probability.
+- Row-Level Security is open (single-user assignment scope); a real product would scope by `auth.uid()`.
+- Extraction runs synchronously in the edge function (no job queue), so very large documents can hit the function timeout.
+- Semantic search requires embeddings — a document only appears in semantic results once its Voyage embedding succeeded.

@@ -1,29 +1,35 @@
 import { PlusIcon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
 
 interface NewContainerCardProps {
   onClick: () => void;
 }
 
 export function NewContainerCard({ onClick }: NewContainerCardProps) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-[160px] w-full flex-col items-center justify-center gap-2 rounded-xl transition-all"
+      className="flex min-h-[160px] w-full flex-col items-center justify-center gap-2 rounded-xl transition-all duration-150"
       style={{
         background: "transparent",
-        border: "1px dashed #D0CEC8",
-        color: "#9B9B9B",
+        border: `1px dashed ${dark ? "#30363D" : "#D0CEC8"}`,
+        color: dark ? "#8B949E" : "#9B9B9B",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.border = "1px dashed #CCFF01";
-        (e.currentTarget as HTMLButtonElement).style.color = "#5A7A00";
-        (e.currentTarget as HTMLButtonElement).style.background = "#FDFFF5";
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.border = "1px dashed #CCFF01";
+        el.style.color = dark ? "#CCFF01" : "#5A7A00";
+        el.style.background = dark ? "rgba(204,255,1,0.05)" : "#FDFFF5";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.border = "1px dashed #D0CEC8";
-        (e.currentTarget as HTMLButtonElement).style.color = "#9B9B9B";
-        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.border = `1px dashed ${dark ? "#30363D" : "#D0CEC8"}`;
+        el.style.color = dark ? "#8B949E" : "#9B9B9B";
+        el.style.background = "transparent";
       }}
     >
       <PlusIcon className="size-5" />

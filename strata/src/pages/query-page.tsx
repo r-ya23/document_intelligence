@@ -13,7 +13,8 @@ export function QueryPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
-    mutate(query.trim());
+    // no containerId -> global search across all documents
+    mutate({ query: query.trim() });
   }
 
   return (

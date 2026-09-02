@@ -1,10 +1,11 @@
 // Request/response contracts for the two Edge Functions. Mirrors
 // supabase/functions/extract-and-structure/index.ts and supabase/functions/query-router/index.ts
 // exactly — update both sides together if the function's shape changes.
-import type { DocumentStatus, FieldConfidence, MatchDocumentsResult } from "./db";
+import type { DocumentStatus, FieldConfidence, FieldType, MatchDocumentsResult } from "./db";
 
 // ---- extract-and-structure ----
 
+// container_id is read from the document row server-side, so it isn't part of the request.
 export interface ExtractRequest {
   document_id: string;
 }
@@ -14,6 +15,9 @@ export interface ExtractedFieldResult {
   value: string;
   source_span: string | null;
   confidence: FieldConfidence;
+  field_type: FieldType;
+  // false when the field was surfaced outside the container schema (loose-with-flagging)
+  is_schema_field: boolean;
 }
 
 export interface ExtractResponseSuccess {
@@ -40,6 +44,8 @@ export interface QueryFilter {
 
 export interface QueryRequest {
   query: string;
+  // optional: scope both search modes to a single container. omit for global search.
+  container_id?: string | null;
 }
 
 export interface FilterModeResultField {
@@ -55,6 +61,8 @@ export interface FilterModeResult {
   doc_type: string | null;
   status: DocumentStatus;
   created_at: string;
+  // provenance: which container this document belongs to (null for uncontained)
+  container_id: string | null;
   fields: FilterModeResultField[];
 }
 

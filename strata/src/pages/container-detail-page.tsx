@@ -19,7 +19,7 @@ export function ContainerDetailPage() {
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Container not found.</p>
         <Button variant="outline" asChild>
-          <Link to="/">Back to containers</Link>
+          <Link to="/dashboard">Back to containers</Link>
         </Button>
       </div>
     );
@@ -32,7 +32,7 @@ export function ContainerDetailPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/">
+            <Link to="/dashboard">
               <ArrowLeftIcon className="size-4" />
             </Link>
           </Button>

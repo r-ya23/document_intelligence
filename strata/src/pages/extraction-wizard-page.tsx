@@ -40,8 +40,8 @@ export function ExtractionWizardPage() {
   const document = documentQuery.data;
   const fields = fieldsQuery.data ?? [];
 
-  // Sync verifyMode to the container's default once it loads (container may not be resolved yet
-  // on first render, since useContainer reads from the mock store).
+  // Sync verifyMode to the container's default once it loads (the container may not be resolved
+  // yet on first render, since useContainer resolves from the async containers query).
   useEffect(() => {
     if (container) setVerifyMode(container.defaultMode);
   }, [container]);

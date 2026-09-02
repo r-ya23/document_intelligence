@@ -1,8 +1,8 @@
-// UI-only container/extraction model — mirrors the "containers" concept from the design mockup.
-// Not backed by Supabase yet: no `containers` or `extractions` tables exist. This module is the
-// single source of truth for that mock state, kept separate from src/types/db.ts (the real,
-// DB-backed types) so it's obvious which types are provisional vs schema-derived.
-import type { DocType } from "@/types/db";
+// Container/extraction view models used across the container pages. These are camelCase shapes
+// the UI consumes; use-containers.ts maps the snake_case Supabase rows (containers,
+// container_fields, documents) into them. Kept separate from src/types/db.ts (the raw DB-derived
+// types) so it's clear which is the UI model vs the schema shape.
+import type { DocType, FieldType } from "@/types/db";
 
 export type VerifyMode = "auto" | "manual";
 
@@ -17,7 +17,7 @@ export interface Container {
 // An extraction's status mirrors the underlying document's real status (see use-containers.ts,
 // docToExtraction). "published" is a UI label for a document that finished successfully
 // (ready_for_review / verified); "failed" surfaces a failed extraction in the log rather than
-// pretending it published.
+// pretending it published; "processing" covers the in-flight statuses.
 export type ExtractionStatus = "published" | "failed" | "processing";
 
 export interface Extraction {
@@ -27,11 +27,9 @@ export interface Extraction {
   docCount: number;
   createdAt: string;
   status: ExtractionStatus;
-  /** Real Supabase document ids produced by this extraction batch, for linking into /documents/:id. */
+  /** Real Supabase document ids behind this extraction, for linking into /documents/:id. */
   documentIds: string[];
 }
-
-import type { FieldType } from "@/types/db";
 
 // One field in a container's schema, as authored in the create dialog. Mirrors container_fields.
 export interface ContainerFieldInput {
@@ -46,11 +44,4 @@ export interface NewContainerInput {
   docType: DocType;
   defaultMode: VerifyMode;
   fields: ContainerFieldInput[];
-}
-
-export interface NewExtractionInput {
-  containerId: string;
-  docCount: number;
-  mode: VerifyMode;
-  documentIds: string[];
 }

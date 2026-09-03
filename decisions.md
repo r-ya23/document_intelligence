@@ -102,6 +102,12 @@ actually insert) was the change that made the whole USP real instead of a UI dem
 
 ---
 
+## Global document listing and querying
+
+There is a feature to see, search and query on all documents, documents can be uploaded outside of a container as well. the extraction on from the documents module flow is manual and not auto. once uploaded it is queued, user clicks on row to proceed with the flow.
+
+---
+
 ## One shared, self-paginating table instead of three
 
 There are three tables in the app — the document list and the two query-result views (filter and
